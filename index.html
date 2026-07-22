@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control Tower — Pilotage Effectifs &amp; ETP</title>
+
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<!-- SheetJS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- jsPDF + AutoTable -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- DataTables (+ jQuery dependency) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.11/css/jquery.dataTables.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.11/js/jquery.dataTables.min.js"></script>
+
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="theme-dark">
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="ct-sidebar" id="sidebar">
+  <div class="ct-brand">
+    <div class="ct-brand-mark">⌁</div>
+    <div class="ct-brand-text">
+      <span class="ct-brand-title">CONTROL TOWER</span>
+      <span class="ct-brand-sub">Pilotage ETP &amp; Effectifs</span>
+    </div>
+  </div>
+
+  <nav class="ct-nav" id="ct-nav">
+    <button class="ct-nav-item active" data-view="import"><span class="ico">⇪</span>Import</button>
+    <button class="ct-nav-item" data-view="planning"><span class="ico">▦</span>Planning</button>
+    <button class="ct-nav-item" data-view="dashboard"><span class="ico">◈</span>Dashboard KPI</button>
+    <button class="ct-nav-item" data-view="coverage"><span class="ico">▤</span>Couverture</button>
+    <button class="ct-nav-item" data-view="analysis"><span class="ico">◎</span>Analyse Couverture</button>
+    <button class="ct-nav-item" data-view="alerts"><span class="ico">▲</span>Alertes <span class="ct-badge-count" id="nav-alert-count">0</span></button>
+    <button class="ct-nav-item" data-view="simulator"><span class="ico">⇄</span>Simulateur</button>
+    <button class="ct-nav-item" data-view="charts"><span class="ico">◫</span>Graphiques</button>
+    <button class="ct-nav-item" data-view="executive"><span class="ico">★</span>Dashboard Exécutif</button>
+    <button class="ct-nav-item" data-view="exportv"><span class="ico">⇩</span>Exports</button>
+  </nav>
+
+  <div class="ct-sidebar-foot">
+    <button id="theme-toggle" class="ct-theme-btn">☾ Mode clair</button>
+    <div class="ct-data-status" id="data-status">Aucune donnée importée</div>
+  </div>
+</aside>
+
+<button class="ct-mobile-toggle" id="mobile-toggle">☰</button>
+
+<!-- ===================== MAIN ===================== -->
+<main class="ct-main">
+
+  <header class="ct-topbar">
+    <h1 id="view-title">Import des données</h1>
+    <div class="ct-topbar-right">
+      <div class="ct-scope" id="scope-summary">—</div>
+    </div>
+  </header>
+
+  <div class="ct-content" id="ct-content">
+
+    <!-- ============ VIEW: IMPORT ============ -->
+    <section class="ct-view active" id="view-import">
+
+      <div class="ct-grid-2">
+        <div class="ct-card ct-dropcard" id="drop-planning">
+          <div class="ct-drop-icon">▦</div>
+          <h3>Planning des collaborateurs</h3>
+          <p>Glissez-déposez votre fichier Excel (.xlsx / .xls) contenant le planning, ou cliquez pour sélectionner.</p>
+          <input type="file" id="file-planning" accept=".xlsx,.xls" hidden>
+          <button class="ct-btn ct-btn-primary" id="btn-planning">Choisir un fichier</button>
+          <div class="ct-drop-file" id="planning-filename"></div>
+        </div>
+
+        <div class="ct-card ct-dropcard" id="drop-needs">
+          <div class="ct-drop-icon">◎</div>
+          <h3>Besoins ETP</h3>
+          <p>Importez un fichier Excel contenant les besoins ETP par heure (par file d'attente / service), ou saisissez-les manuellement ci-dessous.</p>
+          <input type="file" id="file-needs" accept=".xlsx,.xls" hidden>
+          <button class="ct-btn ct-btn-secondary" id="btn-needs">Choisir un fichier</button>
+          <div class="ct-drop-file" id="needs-filename"></div>
+        </div>
+      </div>
+
+      <div class="ct-card" id="import-progress-card" style="display:none">
+        <div class="ct-progress-label" id="progress-label">Traitement en cours…</div>
+        <div class="ct-progress-bar"><div class="ct-progress-fill" id="progress-fill"></div></div>
+      </div>
+
+      <div class="ct-card" id="import-preview-card" style="display:none">
+        <div class="ct-card-head">
+          <h3>Prévisualisation</h3>
+          <div>
+            <button class="ct-btn ct-btn-ghost" id="btn-cancel-import">Annuler</button>
+            <button class="ct-btn ct-btn-primary" id="btn-validate-import">Valider l'import</button>
+          </div>
+        </div>
+        <div id="preview-summary" class="ct-preview-summary"></div>
+        <div class="ct-table-wrap"><table id="preview-table" class="ct-table"></table></div>
+        <div id="preview-errors" class="ct-error-list"></div>
+      </div>
+
+      <div class="ct-card" id="manual-needs-card">
+        <div class="ct-card-head">
+          <h3>Saisie manuelle des besoins ETP (appliquée à toutes les dates)</h3>
+          <button class="ct-btn ct-btn-secondary" id="btn-apply-manual-needs">Appliquer</button>
+        </div>
+        <div class="ct-hour-grid" id="manual-needs-grid"></div>
+      </div>
+
+      <div class="ct-toast" id="toast"></div>
+    </section>
+
+    <!-- ============ VIEW: PLANNING ============ -->
+    <section class="ct-view" id="view-planning">
+      <div class="ct-toolbar">
+        <div class="ct-seg" id="planning-viewmode">
+          <button class="ct-seg-btn active" data-mode="day">Jour</button>
+          <button class="ct-seg-btn" data-mode="week">Semaine</button>
+          <button class="ct-seg-btn" data-mode="month">Mois</button>
+        </div>
+        <input type="date" id="planning-date" class="ct-input">
+        <input type="text" id="planning-search" class="ct-input" placeholder="Rechercher un collaborateur…">
+        <select id="planning-team-filter" class="ct-input"><option value="">Toutes équipes</option></select>
+      </div>
+      <div class="ct-card">
+        <div class="ct-table-wrap"><table id="planning-table" class="ct-table" style="width:100%"></table></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: DASHBOARD KPI ============ -->
+    <section class="ct-view" id="view-dashboard">
+      <div class="ct-kpi-grid" id="kpi-grid"></div>
+      <div class="ct-grid-2">
+        <div class="ct-card"><h3>Effectif réel vs ETP requis</h3><canvas id="chart-kpi-main"></canvas></div>
+        <div class="ct-card"><h3>Écart de couverture</h3><canvas id="chart-kpi-gap"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: COVERAGE ============ -->
+    <section class="ct-view" id="view-coverage">
+      <div class="ct-toolbar">
+        <input type="date" id="coverage-date" class="ct-input">
+        <div class="ct-threshold-box">
+          <label>Seuil rouge &lt;<input type="number" id="th-low" value="95" class="ct-input ct-input-sm">%</label>
+          <label>Seuil orange &gt;<input type="number" id="th-high" value="105" class="ct-input ct-input-sm">%</label>
+        </div>
+      </div>
+      <div class="ct-card">
+        <div class="ct-table-wrap"><table id="coverage-table" class="ct-table"></table></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: ANALYSIS ============ -->
+    <section class="ct-view" id="view-analysis">
+      <div class="ct-toolbar">
+        <input type="date" id="analysis-date" class="ct-input">
+        <label class="ct-inline-label">Effectif cible (ETP constant)
+          <input type="number" id="target-effectif" class="ct-input ct-input-sm" step="0.1" placeholder="ex: 15">
+        </label>
+        <label class="ct-inline-label">Heure
+          <select id="analysis-hour" class="ct-input"></select>
+        </label>
+      </div>
+      <div class="ct-grid-2" id="analysis-answers"></div>
+      <div class="ct-card">
+        <h3>Besoin complémentaire pour atteindre l'effectif cible</h3>
+        <div class="ct-table-wrap"><table id="target-table" class="ct-table"></table></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: ALERTS ============ -->
+    <section class="ct-view" id="view-alerts">
+      <div class="ct-kpi-grid" id="alerts-summary"></div>
+      <div class="ct-card">
+        <div class="ct-table-wrap"><table id="alerts-table" class="ct-table"></table></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: SIMULATOR ============ -->
+    <section class="ct-view" id="view-simulator">
+      <div class="ct-card">
+        <div class="ct-card-head"><h3>Ajouter un agent simulé</h3></div>
+        <div class="ct-sim-form" id="sim-add-form"></div>
+        <button class="ct-btn ct-btn-primary" id="btn-sim-add">Ajouter l'agent</button>
+      </div>
+      <div class="ct-grid-2">
+        <div class="ct-card">
+          <h3>Agents simulés</h3>
+          <div class="ct-table-wrap"><table id="sim-agents-table" class="ct-table"></table></div>
+        </div>
+        <div class="ct-card">
+          <h3>Ajuster les besoins ETP (facteur global)</h3>
+          <input type="range" id="sim-needs-factor" min="50" max="150" value="100" class="ct-range">
+          <div id="sim-needs-factor-label">100%</div>
+          <button class="ct-btn ct-btn-ghost" id="btn-sim-reset">Réinitialiser la simulation</button>
+        </div>
+      </div>
+      <div class="ct-card">
+        <h3>Impact simulation — couverture recalculée</h3>
+        <canvas id="chart-sim"></canvas>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: CHARTS ============ -->
+    <section class="ct-view" id="view-charts">
+      <div class="ct-toolbar">
+        <input type="date" id="charts-date" class="ct-input">
+      </div>
+      <div class="ct-charts-grid">
+        <div class="ct-card"><h3>1. Effectif réel vs ETP requis</h3><canvas id="c1"></canvas></div>
+        <div class="ct-card"><h3>2. Écart de couverture</h3><canvas id="c2"></canvas></div>
+        <div class="ct-card"><h3>3. Histogramme ETP réel vs requis</h3><canvas id="c3"></canvas></div>
+        <div class="ct-card"><h3>4. Charge horaire (nb agents)</h3><canvas id="c4"></canvas></div>
+        <div class="ct-card ct-card-wide"><h3>5. Heatmap de couverture (semaine)</h3><div id="c5" class="ct-heatmap"></div></div>
+        <div class="ct-card ct-card-wide"><h3>6. Heatmap des écarts</h3><div id="c6" class="ct-heatmap"></div></div>
+        <div class="ct-card"><h3>7. Répartition par équipe</h3><canvas id="c7"></canvas></div>
+        <div class="ct-card"><h3>8. Top 20 collaborateurs (heures)</h3><canvas id="c8"></canvas></div>
+        <div class="ct-card"><h3>9. Couverture moyenne par jour</h3><canvas id="c9"></canvas></div>
+        <div class="ct-card"><h3>10. Top heures critiques</h3><canvas id="c10"></canvas></div>
+      </div>
+      <div class="ct-card" id="cell-detail-card" style="display:none">
+        <h3 id="cell-detail-title">Agents présents</h3>
+        <div id="cell-detail-body"></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: EXECUTIVE ============ -->
+    <section class="ct-view" id="view-executive">
+      <div class="ct-kpi-grid" id="exec-kpi-grid"></div>
+      <div class="ct-grid-3">
+        <div class="ct-card"><h3>Top 5 heures critiques</h3><div id="exec-top-critical"></div></div>
+        <div class="ct-card"><h3>Top 5 heures les mieux couvertes</h3><div id="exec-top-best"></div></div>
+        <div class="ct-card"><h3>Top 5 équipes les plus sollicitées</h3><div id="exec-top-teams"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW: EXPORTS ============ -->
+    <section class="ct-view" id="view-exportv">
+      <div class="ct-grid-3">
+        <div class="ct-card ct-export-card">
+          <div class="ct-drop-icon">▤</div>
+          <h3>Export Excel</h3>
+          <p>Planning, couverture, KPI et alertes dans un classeur .xlsx multi-feuilles.</p>
+          <button class="ct-btn ct-btn-primary" id="btn-export-xlsx">Télécharger .xlsx</button>
+        </div>
+        <div class="ct-card ct-export-card">
+          <div class="ct-drop-icon">≡</div>
+          <h3>Export CSV</h3>
+          <p>Tableau de couverture horaire au format CSV.</p>
+          <button class="ct-btn ct-btn-primary" id="btn-export-csv">Télécharger .csv</button>
+        </div>
+        <div class="ct-card ct-export-card">
+          <div class="ct-drop-icon">▥</div>
+          <h3>Export PDF</h3>
+          <p>Rapport complet : KPI, graphiques clés, alertes, tableaux, analyse de couverture.</p>
+          <button class="ct-btn ct-btn-primary" id="btn-export-pdf">Télécharger .pdf</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script src="js/app.js"></script>
+<script src="js/etp.js"></script>
+<script src="js/planning.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/alerts.js"></script>
+<script src="js/simulator.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/export.js"></script>
+</body>
+</html>
